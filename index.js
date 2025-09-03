@@ -3,6 +3,7 @@ const app = express();
 const cors = require('cors');
 const jwt = require('jsonwebtoken');
 require('dotenv').config();
+const Stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 const port = process.env.PORT || 5001;
 
 
@@ -29,7 +30,6 @@ async function run() {
         // Connect the client to the server	(optional starting in v4.7)
         await client.connect();
 
-
         const userCollection = client.db("FoodiFyDB").collection("users");
         const menuCollection = client.db("FoodiFyDB").collection("menu");
         const reviewCollection = client.db("FoodiFyDB").collection("reviews");
@@ -47,7 +47,6 @@ async function run() {
             const result = await userCollection.insertOne(user);
             res.send(result);
         })
-
         // JWT Related api's and secure user 
         app.post('/jwt', async (req, res) => {
             const user = req.body;
@@ -71,7 +70,6 @@ async function run() {
                 next();
             })
         };
-
         // use verify admin after veriFyToken
         const veriFyAdmin = async (req, res, next) => {
             const email = req.decoded.email;
@@ -83,16 +81,12 @@ async function run() {
             }
             next();
         }
-
-
         // ✅ Route
         app.get("/users", verifyToken, veriFyAdmin, async (req, res) => {
             // console.log(req.headers);
             const result = await userCollection.find().toArray();
             res.send(result);
         });
-
-
         // delet users
         app.delete('/users/:id', verifyToken, veriFyAdmin, async (req, res) => {
             const id = req.params.id;
@@ -100,7 +94,6 @@ async function run() {
             const result = await userCollection.deleteOne(query);
             res.send(result);
         })
-
         // provide admin reole 
         app.patch('/users/admin/:id', verifyToken, veriFyAdmin, async (req, res) => {
             const id = req.params.id;
@@ -113,8 +106,6 @@ async function run() {
             const result = await userCollection.updateOne(filter, updatedDoc);
             res.send(result);
         })
-
-
         // Check random email its  Admin Email or not
         app.get('/users/admin/:email', verifyToken, async (req, res) => {
             const email = req.params.email;
@@ -130,9 +121,6 @@ async function run() {
             }
             res.send({ admin });
         })
-
-
-
         // Menu related apis
         // get data from client side
         app.get('/menu', async (req, res) => {
@@ -145,7 +133,6 @@ async function run() {
             const result = await menuCollection.insertOne(item);
             res.send(result);
         })
-
         // Find specific id for update item
         app.get('/menu/:id', async (req, res) => {
             const id = req.params.id;
@@ -169,8 +156,6 @@ async function run() {
             const result = await menuCollection.updateOne(filter, updatedDoc);
             res.send(result);
         })
-
-
         // delete menu item by only admin
         app.delete('/menu/:id', verifyToken, veriFyAdmin, async (req, res) => {
             const id = req.params.id;
@@ -178,20 +163,12 @@ async function run() {
             const result = await menuCollection.deleteOne(query);
             res.send(result);
         })
-
-
-
-
-
         // Reviews Data load 
         app.get('/reviews', async (req, res) => {
             const result = await reviewCollection.find().toArray();
             res.send(result);
         })
-
-
         // Card Colection 
-
         // Post Cart into server side
         app.post('/carts', async (req, res) => {
             const cartItem = req.body;
@@ -199,7 +176,6 @@ async function run() {
             res.send(result);
 
         })
-
         // get card collection data
         app.get('/carts', async (req, res) => {
             const email = req.query.email;
@@ -207,14 +183,26 @@ async function run() {
             const result = await cartCollection.find(query).toArray();
             res.send(result);
         })
-
-
         // Delete cart item from cart dashboard
         app.delete('/carts/:id', async (req, res) => {
             const id = req.params.id;
             const query = { _id: new ObjectId(id) };
             const result = await cartCollection.deleteOne(query);
             res.send(result);
+        })
+        // Payment intent 
+        app.post('/create-payment-intent', async (req, res) => {
+            const { price } = req.body;
+            const amount = parseInt(price * 100);
+            console.log('Amount od the all selected cart items : ', amount)
+            const paymentIntent = await Stripe.paymentIntents.create({
+                amount,
+                currency: "usd",
+                payment_method_types: ["card"],
+            });
+            res.send({
+                clientSecret: paymentIntent.client_secret,
+            })
         })
 
 
