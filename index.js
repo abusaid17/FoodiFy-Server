@@ -120,7 +120,7 @@ async function run() {
             const email = req.params.email;
             // check token provider email and requested email are same or not?
             if (email !== req.decoded.email) {
-                return res.status(403).send({ message: 'forbiden access' });
+                return res.status(403).send({ message: 'forbidden access' });
             }
             const query = { email: email };
             const user = await userCollection.findOne(query);
@@ -128,16 +128,60 @@ async function run() {
             if (user) {
                 admin = user?.role === 'admin';
             }
-            res.send(admin);
+            res.send({ admin });
         })
 
 
 
         // Menu related apis
+        // get data from client side
         app.get('/menu', async (req, res) => {
             const result = await menuCollection.find().toArray();
             res.send(result);
         })
+        // Add menu item inside database using Admin user
+        app.post('/menu', verifyToken, veriFyAdmin, async (req, res) => {
+            const item = req.body;
+            const result = await menuCollection.insertOne(item);
+            res.send(result);
+        })
+
+        // Find specific id for update item
+        app.get('/menu/:id', async (req, res) => {
+            const id = req.params.id;
+            const query = { _id: new ObjectId(id) };
+            const result = await menuCollection.findOne(query);
+            res.send(result);
+        })//patch  using for update some data for updated menuCollection
+        app.patch('/menu/:id', async (req, res) => {
+            const item = req.body;
+            const id = req.params.id;
+            const filter = { _id: new ObjectId(id) };
+            const updatedDoc = {
+                $set: {
+                    name: item.name,
+                    category: item.category,
+                    price: item.price,
+                    recipe: item.recipe,
+                    image: item.image,
+                }
+            }
+            const result = await menuCollection.updateOne(filter, updatedDoc);
+            res.send(result);
+        })
+
+
+        // delete menu item by only admin
+        app.delete('/menu/:id', verifyToken, veriFyAdmin, async (req, res) => {
+            const id = req.params.id;
+            const query = { _id: new ObjectId(id) };
+            const result = await menuCollection.deleteOne(query);
+            res.send(result);
+        })
+
+
+
+
 
         // Reviews Data load 
         app.get('/reviews', async (req, res) => {
