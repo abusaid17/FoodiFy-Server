@@ -6,11 +6,9 @@ require('dotenv').config();
 const Stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 const port = process.env.PORT || 5001;
 
-
 // middle wire
 app.use(cors());
 app.use(express.json());
-
 
 
 const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
@@ -34,6 +32,7 @@ async function run() {
         const menuCollection = client.db("FoodiFyDB").collection("menu");
         const reviewCollection = client.db("FoodiFyDB").collection("reviews");
         const cartCollection = client.db("FoodiFyDB").collection("carts");
+        const paymentCollection = client.db("FoodiFyDB").collection("payments");
 
         // user related apis data
         app.post('/users', async (req, res) => {
@@ -190,7 +189,7 @@ async function run() {
             const result = await cartCollection.deleteOne(query);
             res.send(result);
         })
-        // Payment intent 
+        // Payment intent Payment related Api's
         app.post('/create-payment-intent', async (req, res) => {
             const { price } = req.body;
             const amount = parseInt(price * 100);
@@ -204,6 +203,105 @@ async function run() {
                 clientSecret: paymentIntent.client_secret,
             })
         })
+
+        // Loada data inside payment history page for specific users transaction
+        app.get('/payments/:email', verifyToken, async (req, res) => {
+            const query = { email: req.params.email };
+
+            if (req.params.email !== req.decoded.email) {
+                return res.status(403).send({ message: 'forbidden access' });
+            }
+
+            const result = await paymentCollection.find(query).toArray();
+            res.send(result);
+        });
+
+        // _______TODO: payment related api (This api not pass menuItemIds__________)
+        app.post('/payments', async (req, res) => {
+            const payment = req.body;
+            const paymentResult = await paymentCollection.insertOne(payment);
+            const query = {
+                _id: {
+                    $in: payment.cartIds.map(id => new ObjectId(id)),
+                }
+            }
+            const deleteResult = await cartCollection.deleteMany(query);
+            console.log('payment info : ', payment);
+            res.send({ paymentResult, deleteResult });
+        })
+
+        // Admin stats or analitics 
+        app.get('/admin-stats', verifyToken, veriFyAdmin, async (req, res) => {
+            const users = await userCollection.estimatedDocumentCount();
+            const menuItems = await menuCollection.estimatedDocumentCount();
+            const orders = await paymentCollection.estimatedDocumentCount();
+
+            // Thia is a way to calculate Revenew but this is not best way.
+            // const payments = await paymentCollection.find().toArray();
+            // const revenue = payments.reduce((total, payment) => total + payment.price, 0);
+
+            const result = await paymentCollection.aggregate([
+                {
+                    $group: {
+                        _id: null,
+                        totalRevenue: {
+                            $sum: '$price'
+                        }
+                    }
+                }
+            ]).toArray();
+            const revenue = result.length > 0 ? result[0].totalRevenue : 0;
+
+            res.send({
+                users,
+                menuItems,
+                orders,
+                revenue,
+            })
+        })
+
+
+
+
+        // Uding Aggregate pipeline for showing graph
+        app.get('/order-status', async (req, res) => {
+            const result = await paymentCollection.aggregate([
+                {
+                    $unwind: '$menuItemIds'
+                },
+                {
+                    $lookup: {
+                        from: 'menu',
+                        localField: 'menuItemIds',
+                        foreignField: '_id',
+                        as: 'menuItems'
+                    }
+                },
+                {
+                    $unwind: '$menuItems'
+                },
+                {
+                    $group: {
+                        _id: '$menuItems.category',
+                        quantity: { $sum: 1 },
+                        revenue: { $sum: '$menuItems.price' }
+                    }
+                },
+                {
+                    $project: {
+                        _id: 0,
+                        category: '$_id',
+                        quantity: '$quantity',
+                        revenue: '$revenue',
+                    }
+                }
+            ]).toArray();
+
+            res.send(result);
+        })
+
+
+
 
 
         // Send a ping to confirm a successful connection
